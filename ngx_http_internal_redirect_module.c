@@ -18,10 +18,20 @@ typedef enum {
 } ngx_http_internal_redirect_phase_t;
 
 
+typedef enum {
+    NGX_HTTP_INTERNAL_REDIRECT_FLAG_DEFAULT = 0,
+    NGX_HTTP_INTERNAL_REDIRECT_FLAG_BREAK,
+    NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_301,
+    NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_302,
+    NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_303,
+    NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_307,
+    NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_308,
+} ngx_http_internal_redirect_flag_t;
+
+
 typedef struct {
     ngx_regex_t               *regex;
     ngx_http_complex_value_t  *replacement;
-    ngx_flag_t                 ignore_case;
     ngx_flag_t                 flag;
     ngx_http_complex_value_t  *filter;
     ngx_uint_t                 negative;
@@ -43,13 +53,13 @@ static char * ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd
 static ngx_int_t ngx_http_internal_redirect_handler_preaccess(ngx_http_request_t *r);
 static ngx_int_t ngx_http_internal_redirect_handler_access(ngx_http_request_t *r);
 static ngx_int_t ngx_http_internal_redirect_handler_precontent(ngx_http_request_t *r);
-
+static ngx_int_t ngx_http_internal_redirect_handler_content(ngx_http_request_t *r);
 
 static ngx_command_t  ngx_http_internal_redirect_commands[] = {
 
     {
       ngx_string("internal_redirect"),
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_ANY,
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
       ngx_http_internal_redirect_rule,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
@@ -100,7 +110,6 @@ ngx_http_internal_redirect_create_conf(ngx_conf_t *cf)
         return NULL;
     }
 
-    /* 将数组指针初始为 NGX_CONF_UNSET_PTR */
     for (int i = 0; i < NGX_HTTP_INTERNAL_REDIRECT_PHASE_MAX; i++) {
         ilcf->rules[i] = NGX_CONF_UNSET_PTR;
     }
@@ -114,15 +123,11 @@ ngx_http_internal_redirect_merge_conf(ngx_conf_t *cf, void *parent, void *child)
 {
     ngx_http_internal_redirect_loc_conf_t *prev = parent;
     ngx_http_internal_redirect_loc_conf_t *conf = child;
+    ngx_uint_t i;
 
-    for (int i = 0; i < NGX_HTTP_INTERNAL_REDIRECT_PHASE_MAX; i++) {
+    for (i = 0; i < NGX_HTTP_IR_PHASE_MAX; i++) {
         if (conf->rules[i] == NGX_CONF_UNSET_PTR) {
-            conf->rules[i] = (prev->rules[i] != NGX_CONF_UNSET_PTR)
-                ? prev->rules[i]
-                : ngx_array_create(cf->pool, 4, sizeof(ngx_http_internal_redirect_rule_t));
-            if (conf->rules[i] == NULL) {
-                return NGX_CONF_ERROR;
-            }
+            conf->rules[i] = prev->rules[i];
         }
     }
 
@@ -135,174 +140,193 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_internal_redirect_loc_conf_t *ilcf = conf;
 
-    ngx_str_t       *value;
-    ngx_uint_t       n;
-    ngx_http_internal_redirect_rule_t     *rule;
-    ngx_regex_compile_t     rc;
-    u_char           errstr[NGX_MAX_CONF_ERRSTR];
-    ngx_str_t        pattern, replacement;
-    ngx_str_t        phase_str;
-    ngx_str_t        if_str;   /* 用于存储 if=xxx 或 if!=xxx 的部分 */
-    ngx_flag_t       negate = 0;
-    ngx_flag_t       insensitive = 0;
-    ngx_flag_t       brk = 0;
-    ngx_int_t        phase = NGX_HTTP_INTERNAL_REDIRECT_PHASE_PREACCESS; /* 默认 preaccess */
+    ngx_str_t                          *value;
+    ngx_uint_t                          cur, last;
+    ngx_http_internal_redirect_rule_t  *rule;
+    ngx_regex_compile_t                 rc;
+    u_char                              errstr[NGX_MAX_CONF_ERRSTR];
+    ngx_str_t                           pattern, replacement;
+    ngx_http_complex_value_t           *filter;
+    ngx_flag_t                          negative, ignore_case;
+    ngx_uint_t                          flag;
+    ngx_int_t                           phase;
+    ngx_http_compile_complex_value_t    ccv;
+
+    negative = 0;
+    ignore_case = 0;
+    filter = NULL;
+    phase = NGX_HTTP_INTERNAL_REDIRECT_PHASE_PREACCESS;
+    flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_DEFAULT;
 
     value = cf->args->elts;
-    n = cf->args->nelts;
-    if (n < 3) {
-        /*
-         * 例如最少也要： internal_redirect regex replacement
-         * 但由于可能含 -i，所以再稍微宽松点判断
-         */
+    last = cf->args->nelts -1 ;
+
+    if (cf->args->nelts < 3) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid number of parameters in \"internal_redirect\"");
-        return (char *)NGX_CONF_ERROR;
+            "invalid number of parameters in \"internal_redirect\"");
+        return NGX_CONF_ERROR;
     }
 
-    /* 先初始化需要用到的字符串 */
     ngx_memzero(&pattern, sizeof(pattern));
     ngx_memzero(&replacement, sizeof(replacement));
     ngx_memzero(&phase_str, sizeof(phase_str));
-    ngx_memzero(&if_str, sizeof(if_str));
+    ngx_memzero(&flag_str, sizeof(phase_str));
 
-    /* 开始从第一个或第二个参数起做解析 */
-    ngx_uint_t cur = 1;
+    cur = 1;
 
-    /* 如果第一个参数是 -i，则说明要大小写不敏感 */
-    if (cur < n && ngx_strcmp(value[cur].data, "-i") == 0) {
-        insensitive = 1;
+    if (cur <= last && ngx_strcmp(value[cur].data, "-i") == 0) {
+        ignore_case = 1;
         cur++;
     }
 
-    if (cur + 1 >= n) {
+    if (cur + 1 > last) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid usage of \"internal_redirect\" directive");
-        return (char *)NGX_CONF_ERROR;
+            "invalid usage of \"internal_redirect\" directive");
+        return NGX_CONF_ERROR;
     }
 
-    /* 此时 cur 指向 regex */
     pattern = value[cur];
     cur++;
 
-    /* 下一个应该是 replacement */
     replacement = value[cur];
     cur++;
 
-    /* 继续解析后面的可选参数 */
-    for (; cur < n; cur++) {
-        /* phase=preaccess|access|precontent */
+    for (; cur <= last; cur++) {
         if (ngx_strncmp(value[cur].data, "phase=", 6) == 0) {
-            phase_str.data = value[cur].data + 6;
-            phase_str.len  = value[cur].len - 6;
-            if (ngx_strcmp(phase_str.data, "preaccess") == 0) {
+            s.data = value[cur].data + 6;
+            s.len  = value[cur].len - 6;
+
+            if (ngx_strcmp(s.data, "preaccess") == 0) {
                 phase = NGX_HTTP_INTERNAL_REDIRECT_PHASE_PREACCESS;
-            } else if (ngx_strcmp(phase_str.data, "access") == 0) {
+            } else if (ngx_strcmp(s.data, "access") == 0) {
                 phase = NGX_HTTP_INTERNAL_REDIRECT_PHASE_ACCESS;
-            } else if (ngx_strcmp(phase_str.data, "precontent") == 0) {
+            } else if (ngx_strcmp(s.data, "precontent") == 0) {
                 phase = NGX_HTTP_INTERNAL_REDIRECT_PHASE_PRECONTENT;
+            } else if (ngx_strcmp(s.data, "content") == 0) {
+                phase = NGX_HTTP_INTERNAL_REDIRECT_PHASE_CONTENT;
             } else {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                   "invalid phase \"%V\"", &phase_str);
-                return (char *)NGX_CONF_ERROR;
+                                   "invalid phase \"%V\"", &s);
+                return NGX_CONF_ERROR;
             }
+
+            continue;
         }
-        /* flag=break */
-        else if (ngx_strncmp(value[cur].data, "flag=", 5) == 0) {
-            ngx_str_t flg;
-            flg.data = value[cur].data + 5;
-            flg.len = value[cur].len - 5;
-            if (ngx_strcmp(flg.data, "break") == 0) {
-                brk = 1;
+
+        if (ngx_strncmp(value[cur].data, "flag=", 5) == 0) {
+            s.data = value[cur].data + 5;
+            s.len = value[cur].len - 5;
+
+            if (ngx_strcmp(s.data, "break") == 0) {
+                flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_DEFAULT;
+            } else if (ngx_strcmp(s.data, "status_301") == 0) {
+                flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_301;
+            } else if (ngx_strcmp(s.data, "status_302") == 0) {
+                flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_302;
+            } else if (ngx_strcmp(s.data, "status_303") == 0) {
+                flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_303;
+            } else if (ngx_strcmp(s.data, "status_307") == 0) {
+                flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_307;
+            } else if (ngx_strcmp(s.data, "status_308") == 0) {
+                flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_308;
             } else {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                   "only \"flag=break\" is supported");
-                return (char *)NGX_CONF_ERROR;
+                                   "invalid flag \"%V\"", &s);
+                return NGX_CONF_ERROR;
             }
+
+            continue;
         }
-        /* if=xxx 或 if!=xxx */
-        else if (ngx_strncmp(value[cur].data, "if=", 3) == 0) {
-            negate = 0;
-            if_str.data = value[cur].data + 3;
-            if_str.len = value[cur].len - 3;
-        }
-        else if (ngx_strncmp(value[cur].data, "if!=", 4) == 0) {
-            negate = 1;
-            if_str.data = value[cur].data + 4;
-            if_str.len = value[cur].len - 4;
-        }
-        else {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "invalid parameter \"%V\"", &value[cur]);
-            return (char *)NGX_CONF_ERROR;
+
+        if (ngx_strncmp(value[cur].data, "if=", 3) == 0
+            || ngx_strncmp(value[cur].data, "if!=", 4) == 0)
+        {
+            if (ngx_strncmp(value[cur].data, "if=", 3) == 0) {
+                s.len = value[cur].len - 3;
+                s.data = value[cur].data + 3;
+                negative = 0;
+            } else {
+                s.len = value[cur].len - 4;
+                s.data = value[cur].data + 4;
+                negative = 1;
+            }
+
+            ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+            ccv.cf = cf;
+            ccv.value = &s;
+            ccv.complex_value = ngx_palloc(cf->pool,
+                                        sizeof(ngx_http_complex_value_t));
+            if (ccv.complex_value == NULL) {
+                return NGX_CONF_ERROR;
+            }
+
+            if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+
+            filter = ccv.complex_value;
         }
     }
 
-    /* 如果对应 phase 的 rules 数组还没创建，则创建 */
     if (ilcf->rules[phase] == NGX_CONF_UNSET_PTR) {
-        ilcf->rules[phase] = ngx_array_create(cf->pool, 4, sizeof(ngx_http_internal_redirect_rule_t));
+        ilcf->rules[phase] = ngx_array_create(cf->pool, 4,
+            sizeof(ngx_http_internal_redirect_rule_t));
         if (ilcf->rules[phase] == NULL) {
-            return (char *)NGX_CONF_ERROR;
+            return NGX_CONF_ERROR;
         }
     }
 
     rule = ngx_array_push(ilcf->rules[phase]);
     if (rule == NULL) {
-        return (char *)NGX_CONF_ERROR;
+        return NGX_CONF_ERROR;
     }
 
-    ngx_memzero(rule, sizeof(*rule));
-    rule->phase       = phase;
-    rule->insensitive = insensitive;
-    rule->brk         = brk;
-    ngx_str_set(&rule->var_name, "");
+    rule->ignore_case = ignore_case;
+    rule->flag = flag;
+    rule->filter = filter;
+    rule->negative = negative;
 
     ngx_memzero(&rc, sizeof(ngx_regex_compile_t));
+    rc.pool = cf->pool;
     rc.pattern = pattern;
     rc.err.len = NGX_MAX_CONF_ERRSTR;
     rc.err.data = errstr;
-    rc.pool = cf->pool;
 
-    rc.options = (insensitive ? NGX_REGEX_CASELESS : 0);
+    if (ignore_case == 1) {
+        rc.options = NGX_REGEX_CASELESS;
+    }
 
-    if (ngx_regex_compile(&rc) != NGX_OK) {
+    rule->regex = ngx_http_regex_compile(cf, &rc);
+    if (rule->regex == NULL) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "regex \"%V\" compile failed: %V", &pattern, &rc.err);
-        return (char *)NGX_CONF_ERROR;
+                           "regex \"%V\" compile failed: %V",
+                           &pattern, &rc.err);
+        return NGX_CONF_ERROR;
     }
 
-    rule->regex = rc.regex;
+    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
 
-    /* 保存 replacement */
-    rule->replacement = replacement;
-
-    /* 处理 if= / if!= 参数 */
-    if (if_str.len) {
-        /* 去掉前面的 '$'（若有） */
-        if (if_str.data[0] == '$') {
-            if_str.data++;
-            if_str.len--;
-        }
-        rule->var_name = if_str;
-        rule->var_negate = negate;
-        /* 通过 Nginx 提供的接口获取变量索引 */
-        rule->var_index = ngx_http_get_variable_index(cf, &if_str);
-        if (rule->var_index == NGX_ERROR) {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "invalid variable name in if= or if!= argument: \"%V\"", &if_str);
-            return (char *)NGX_CONF_ERROR;
-        }
-    } else {
-        /* 未设置 if=xxx */
-        rule->var_index = NGX_CONF_UNSET;
+    ccv.cf = cf;
+    ccv.value = &s;
+    ccv.complex_value = ngx_palloc(cf->pool,
+                                sizeof(ngx_http_complex_value_t));
+    if (ccv.complex_value == NULL) {
+        return NGX_CONF_ERROR;
     }
+
+    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    rule->replacement = ccv.complex_value;
 
     return NGX_CONF_OK;
 }
 
 
 static ngx_int_t
-ngx_http_internal_redirect_match_phase(ngx_http_request_t *r, ngx_array_t *rules)
+ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
 {
     ngx_http_internal_redirect_rule_t *rule;
     ngx_uint_t i;
@@ -396,7 +420,7 @@ ngx_http_internal_redirect_handler_preaccess(ngx_http_request_t *r)
     if (ilcf == NULL) {
         return NGX_DECLINED;
     }
-    return ngx_http_internal_redirect_match_phase(r, ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_PREACCESS]);
+    return ngx_http_internal_redirect_handler(r, ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_PREACCESS]);
 }
 
 
@@ -408,7 +432,7 @@ ngx_http_internal_redirect_handler_access(ngx_http_request_t *r)
     if (ilcf == NULL) {
         return NGX_DECLINED;
     }
-    return ngx_http_internal_redirect_match_phase(r, ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_ACCESS]);
+    return ngx_http_internal_redirect_handler(r, ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_ACCESS]);
 }
 
 
@@ -420,7 +444,19 @@ ngx_http_internal_redirect_handler_precontent(ngx_http_request_t *r)
     if (ilcf == NULL) {
         return NGX_DECLINED;
     }
-    return ngx_http_internal_redirect_match_phase(r, ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_PRECONTENT]);
+    return ngx_http_internal_redirect_handler(r, ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_PRECONTENT]);
+}
+
+
+static ngx_int_t
+ngx_http_internal_redirect_handler_content(ngx_http_request_t *r)
+{
+    ngx_http_internal_redirect_loc_conf_t  *ilcf;
+    ilcf = ngx_http_get_module_loc_conf(r, ngx_http_internal_redirect_module);
+    if (ilcf == NULL) {
+        return NGX_DECLINED;
+    }
+    return ngx_http_internal_redirect_handler(r, ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_CONTENT]);
 }
 
 
@@ -439,19 +475,29 @@ ngx_http_internal_redirect_init(ngx_conf_t *cf)
     if (h == NULL) {
         return NGX_ERROR;
     }
+
     *h = ngx_http_internal_redirect_handler_preaccess;
 
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers);
     if (h == NULL) {
         return NGX_ERROR;
     }
+
     *h = ngx_http_internal_redirect_handler_access;
 
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_PRECONTENT_PHASE].handlers);
     if (h == NULL) {
         return NGX_ERROR;
     }
+
     *h = ngx_http_internal_redirect_handler_precontent;
+
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers);
+    if (h == NULL) {
+        return NGX_ERROR;
+    }
+
+    *h = ngx_http_internal_redirect_handler_content;
 
     return NGX_OK;
 }
