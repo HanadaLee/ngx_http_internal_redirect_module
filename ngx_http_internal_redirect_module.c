@@ -343,8 +343,8 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
     ngx_http_internal_redirect_rule_t *rule;
 
     ngx_uint_t   i;
-    ngx_str_t    current_uri, args;
-    ngx_str_t    filter_val;
+    ngx_str_t    uri, args;
+    ngx_str_t    filter;
     ngx_int_t    matched;
     ngx_int_t    rc;
     u_char      *p;
@@ -364,26 +364,26 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
             return NGX_ERROR;
         }
 
-        current_uri.data = p;
+        uri.data = p;
         p = ngx_snprintf(p, uri_len, "%V?%V", &r->uri, &r->args);
-        current_uri.len = p - current_uri.data;
+        uri.len = p - uri.data;
 
     } else {
-        current_uri = r->uri;
+        uri = r->uri;
     }
 
     for (i = 0; i < rules->nelts; i++) {
         /* if= or if!= condition */
         if (rule[i].filter) {
-            ngx_str_null(&filter_val);
+            ngx_str_null(&filter);
 
-            if (ngx_http_complex_value(r, rule[i].filter, &filter_val)
+            if (ngx_http_complex_value(r, rule[i].filter, &filter)
                     != NGX_OK) {
                 return NGX_ERROR;
             }
 
-            if ((filter_val.len == 0
-                 || (filter_val.len == 1 && filter_val.data[0] == '0')))
+            if ((filter.len == 0
+                 || (filter.len == 1 && filter.data[0] == '0')))
             {
                 if (!rule[i].negative) {
                     /* skip this rule due to filter*/
@@ -398,7 +398,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
         }
 
         /* exec regex replacement */
-        rc = ngx_http_regex_exec(r, rule[i].regex, &current_uri);
+        rc = ngx_http_regex_exec(r, rule[i].regex, &uri);
         if (rc == NGX_DECLINED) {
             continue;
         }
@@ -410,9 +410,9 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
             return NGX_OK;
         }
 
-        ngx_str_null(&current_uri);
+        ngx_str_null(&uri);
 
-        if (ngx_http_complex_value(r, rule[i].replacement, &current_uri) != NGX_OK) {
+        if (ngx_http_complex_value(r, rule[i].replacement, &uri) != NGX_OK) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                         "internal_redirect: regex match failed");
             ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -434,7 +434,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
             r->headers_out.location->next = NULL;
             ngx_str_set(&r->headers_out.location->key, "Location");
 
-            r->headers_out.location->value = current_uri;
+            r->headers_out.location->value = uri;
 
             ngx_http_finalize_request(r, rule[i].flag);
             return NGX_OK;
@@ -449,15 +449,15 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
         return NGX_DECLINED;
     }
 
-    if (current_uri.data[0] == '@') {
-        (void) ngx_http_named_location(r, &current_uri);
+    if (uri.data[0] == '@') {
+        (void) ngx_http_named_location(r, &uri);
 
-    } else if (current_uri.data[0] == '/') {
+    } else if (uri.data[0] == '/') {
         ngx_str_null(&args);
-        ngx_http_split_args(r, &current_uri, &args);
+        ngx_http_split_args(r, &uri, &args);
 
-        if (current_uri.len == r->uri.len
-            && ngx_strcmp(current_uri.data, r->uri.data) == 0)
+        if (uri.len == r->uri.len
+            && ngx_strcmp(uri.data, r->uri.data) == 0)
         {
             if (args.len > 0) {
                 r->args = args;
@@ -468,11 +468,11 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
             return NGX_DECLINED;
         }
 
-        (void) ngx_http_internal_redirect(r, &current_uri, &args);
+        (void) ngx_http_internal_redirect(r, &uri, &args);
 
     } else {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "invalid internal redirect URI: \"%V\"", &current_uri);
+                      "invalid internal redirect URI: \"%V\"", &uri);
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return NGX_DONE;
     }

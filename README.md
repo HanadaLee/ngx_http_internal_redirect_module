@@ -51,7 +51,9 @@ To use theses modules, configure your nginx branch with `--add-module=/path/to/n
 
 **Context:** *http, server, location*
 
-Sets the new URI for internal redirection of the request. It is also possible to use a named location instead of the URI. The replacement value can contain variables. If the uri value is empty, then the redirect will not be made.
+Sets the new URI for internal redirection of the request. It is also possible to use a named location instead of the URI. The replacement value can contain variables. If the uri value is empty, then the redirect will not be made. After an internal redirect occurs, the request URI will be changed, and request will be returns to the NGX_HTTP_SERVER_REWRITE_PHASE (server_rewrite) phase. The request proceeds with a server default location. Later at NGX_HTTP_FIND_CONFIG_PHASE (find_config) a new location is chosen based on the new request URI.
+
+> For more information about nginx request phases, please refer to [Development guide#http_phases](https://nginx.org/en/docs/dev/development_guide.html#http_phases)
 
 The optional `-i` parameter specifies that a case-insensitive regular expression match should be performed.
 
