@@ -412,7 +412,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
 
         ngx_str_null(&current_uri);
 
-        if (ngx_http_complex_value(r, &rule[i].replacement, &current_uri) != NGX_OK) {
+        if (ngx_http_complex_value(r, rule[i].replacement, &current_uri) != NGX_OK) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                         "internal_redirect: regex match failed");
             ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -459,7 +459,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
         if (current_uri.len == r->uri.len
             && ngx_strcmp(current_uri.data, r->uri.data) == 0)
         {
-            if (args) {
+            if (args.len > 0) {
                 r->args = args;
             } else {
                 ngx_str_null(&r->args);
