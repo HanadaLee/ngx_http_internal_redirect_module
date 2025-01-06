@@ -1,93 +1,82 @@
-# ngx_http_internal_redirect module
+# Name
 
+`ngx_http_internal_redirect_module` allows making an internal redirect. In contrast to rewriting URIs, the redirection is made after rewrite phase. Currently supported request phases are preaccess, access, precontent and content, allowing it to be used with many nginx official or third-party modules.
 
+> This module is inspired by the nginx official [ngx_http_internal_redirect_module]([ngx_http_internal_redirect_module](https://nginx.org/en/docs/http/ngx_http_internal_redirect_module.html)).
 
-## Getting started
+# Table of Content
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- [Name](#name)
+- [Table of Content](#table-of-content)
+- [Status](#status)
+- [Synopsis](#synopsis)
+- [Installation](#installation)
+- [Directives](#directives)
+	- [internal\_redirect](#internal_redirect)
+- [Author](#author)
+- [License](#license)
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+# Status
 
-## Add your files
+This Nginx module is currently considered experimental. Issues and PRs are welcome if you encounter any problems.
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+# Synopsis
 
+```nginx
+server {
+    listen 127.0.0.1:80;
+    server_name localhost;
+
+    location /old {
+        internal_redirect -i ^/old(.+) /new$1 phase=preaccess;
+    }
+
+	location /new {
+		return 200 'current uri is: $uri';
+	}
+}
 ```
-cd existing_repo
-git remote add origin https://git.hanada.info/hanada/ngx_http_internal_redirect-module.git
-git branch -M main
-git push -uf origin main
-```
 
-## Integrate with your tools
+# Installation
 
-- [ ] [Set up project integrations](https://git.hanada.info/hanada/ngx_http_internal_redirect-module/-/settings/integrations)
+To use theses modules, configure your nginx branch with `--add-module=/path/to/ngx_http_internal_redirect_module`.
 
-## Collaborate with your team
+# Directives
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+## internal_redirect 
 
-## Test and Deploy
+**Syntax:** *internal_redirect [-i] pattern replacement [phase=<phase>] [flag=<flag>] [if=<condition> | if!=<condition>]*
 
-Use the built-in continuous integration in GitLab.
+**Default:** *-*
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+**Context:** *http, server, location*
 
-***
+Sets the new URI for internal redirection of the request. It is also possible to use a named location instead of the URI. The replacement value can contain variables. If the uri value is empty, then the redirect will not be made.
 
-# Editing this README
+The optional `-i` parameter specifies that a case-insensitive regular expression match should be performed.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+The optional `phase=` parameter is used to indicate the phase in which this rule takes effect. The possible values ​​are preaccess, access, precontent and content. The rules of each phase will be executed completely before the internal redirection is performed. The default value is preaccess.
 
-## Suggestions for a good README
+The optional `flag=` parameter is used for additional actions after evaluating the rule. The value of this parameter can be one of:
+* `break`
+stops processing the current set of rules at this phase, and immediately perform an internal redirect;
+* `status_301`
+returns a redirect with the 301 code.
+* `status_302`
+returns a redirect with the 302 code.
+* `status_303`
+returns a redirect with the 303 code.
+* `status_307`
+returns a redirect with the 307 code.
+* `status_308`
+returns a redirect with the 308 code.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+The `if` parameter enables conditional redirection. A request will not be redirected if the condition evaluates to “0” or an empty string. You can also use the form of `if!=` to make negative judgments.
 
-## Name
-Choose a self-explaining name for your project.
+# Author
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Hanada im@hanada.info
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+# License
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+This Nginx module is licensed under [BSD 2-Clause License](LICENSE).

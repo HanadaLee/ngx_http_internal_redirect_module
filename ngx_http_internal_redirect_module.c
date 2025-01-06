@@ -129,7 +129,7 @@ ngx_http_internal_redirect_merge_conf(ngx_conf_t *cf,
     ngx_http_internal_redirect_loc_conf_t *conf = child;
     ngx_uint_t i;
 
-    for (i = 0; i < NGX_HTTP_IR_PHASE_MAX; i++) {
+    for (i = 0; i < NGX_HTTP_INTERNAL_REDIRECT_PHASE_MAX; i++) {
         if (conf->rules[i] == NGX_CONF_UNSET_PTR) {
             conf->rules[i] = prev->rules[i];
         }
@@ -155,6 +155,7 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_uint_t                          flag;
     ngx_int_t                           phase;
     ngx_http_compile_complex_value_t    ccv;
+    ngx_str_t                           s;
 
     negative = 0;
     ignore_case = 0;
@@ -346,14 +347,30 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
     ngx_str_t    filter_val;
     ngx_int_t    matched;
     ngx_int_t    rc;
+    u_char      *p;
+    size_t       uri_len;
 
     if (rules == NULL || rules == NGX_CONF_UNSET_PTR || rules->nelts == 0) {
         return NGX_DECLINED;
     }
 
-    current_uri = r->uri;
     rule = rules->elts;
     matched = 0;
+
+    if (r->args.len > 0) {
+        uri_len = r->uri.len + 1 + r->args.len;
+        p = ngx_palloc(r->pool, uri_len);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+
+        current_uri.data = p;
+        p = ngx_snprintf(p, uri_len, "%V?%V", &r->uri, &r->args);
+        current_uri.len = p - current_uri.data;
+
+    } else {
+        current_uri = r->uri;
+    }
 
     for (i = 0; i < rules->nelts; i++) {
         /* if= or if!= condition */
@@ -432,27 +449,23 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
         return NGX_DECLINED;
     }
 
-    if (current_uri.len == r->uri.len
-        && ngx_strcmp(current_uri.data, r->uri.data) == 0)
-    {
-        return NGX_DECLINED;
-    }
-
     if (current_uri.data[0] == '@') {
         (void) ngx_http_named_location(r, &current_uri);
 
     } else if (current_uri.data[0] == '/') {
         ngx_str_null(&args);
-        if (current_uri.data[current_uri.len - 1] == '?') {
-            /* the last "?" drops the original arguments */
-            current_uri.len--;
-        } else {
-            ngx_http_split_args(r, &current_uri, &args);
+        ngx_http_split_args(r, &current_uri, &args);
 
-            /* use original arguments if args not set */
-            if (args.len == 0) {
-                args = r->args;
+        if (current_uri.len == r->uri.len
+            && ngx_strcmp(current_uri.data, r->uri.data) == 0)
+        {
+            if (args) {
+                r->args = args;
+            } else {
+                ngx_str_null(&r->args);
             }
+            r->valid_unparsed_uri = 0;
+            return NGX_DECLINED;
         }
 
         (void) ngx_http_internal_redirect(r, &current_uri, &args);
