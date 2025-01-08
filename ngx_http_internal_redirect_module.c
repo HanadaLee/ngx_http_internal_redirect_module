@@ -127,7 +127,7 @@ ngx_http_internal_redirect_merge_conf(ngx_conf_t *cf,
 {
     ngx_http_internal_redirect_loc_conf_t *prev = parent;
     ngx_http_internal_redirect_loc_conf_t *conf = child;
-    ngx_uint_t i;
+    ngx_uint_t  i;
 
     for (i = 0; i < NGX_HTTP_INTERNAL_REDIRECT_PHASE_MAX; i++) {
         if (conf->rules[i] == NGX_CONF_UNSET_PTR) {
@@ -382,16 +382,14 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
                 return NGX_ERROR;
             }
 
-            if ((filter.len == 0
-                 || (filter.len == 1 && filter.data[0] == '0')))
+            if (filter.len == 0
+                 || (filter.len == 1 && filter.data[0] == '0'))
             {
                 if (!rule[i].negative) {
-                    /* skip this rule due to filter*/
                     continue;
                 }
             } else {
                 if (rule[i].negative) {
-                    /* skip this rule due to negative filter*/
                     continue;
                 }
             }
