@@ -12,11 +12,11 @@
 #define NGX_HTTP_INTERNAL_REDIRECT_FLAG_DEFAULT    0
 #define NGX_HTTP_INTERNAL_REDIRECT_FLAG_BREAK      1
 #if 0
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_301 301  /* NGX_HTTP_MOVED_PERMANENTLY */
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_302 302  /* NGX_HTTP_MOVED_TEMPORARILY */
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_303 303  /* NGX_HTTP_SEE_OTHER */
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_307 307  /* NGX_HTTP_TEMPORARY_REDIRECT */
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_STATUS_308 308  /* NGX_HTTP_PERMANENT_REDIRECT */
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_301 301  /* NGX_HTTP_MOVED_PERMANENTLY */
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_302 302  /* NGX_HTTP_MOVED_TEMPORARILY */
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_303 303  /* NGX_HTTP_SEE_OTHER */
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_307 307  /* NGX_HTTP_TEMPORARY_REDIRECT */
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_308 308  /* NGX_HTTP_PERMANENT_REDIRECT */
 #endif
 
 
@@ -127,11 +127,24 @@ ngx_http_internal_redirect_merge_conf(ngx_conf_t *cf,
 {
     ngx_http_internal_redirect_loc_conf_t *prev = parent;
     ngx_http_internal_redirect_loc_conf_t *conf = child;
-    ngx_uint_t  i;
+    ngx_http_internal_redirect_rule_t     *rule, *src;
+    ngx_uint_t                             i, j;
 
     for (i = 0; i < NGX_HTTP_INTERNAL_REDIRECT_PHASE_MAX; i++) {
         if (conf->rules[i] == NGX_CONF_UNSET_PTR) {
             conf->rules[i] = prev->rules[i];
+
+        } else if (prev->rules[i] != NGX_CONF_UNSET_PTR) {
+            src = prev->rules[i]->elts;
+
+            for (j = 0; j < prev->rules[i]->nelts; j++) {
+                rule = ngx_array_push(conf->rules[i]);
+                if (rule == NULL) {
+                    return NGX_CONF_ERROR;
+                }
+
+                *rule = src[j];
+            }
         }
     }
 
@@ -227,19 +240,19 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             if (ngx_strcmp(s.data, "break") == 0) {
                 flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_BREAK;
 
-            } else if (ngx_strcmp(s.data, "status_301") == 0) {
+            } else if (ngx_strcmp(s.data, "http_301") == 0) {
                 flag = NGX_HTTP_MOVED_PERMANENTLY;
 
-            } else if (ngx_strcmp(s.data, "status_302") == 0) {
+            } else if (ngx_strcmp(s.data, "http_302") == 0) {
                 flag = NGX_HTTP_MOVED_TEMPORARILY;
 
-            } else if (ngx_strcmp(s.data, "status_303") == 0) {
+            } else if (ngx_strcmp(s.data, "http_303") == 0) {
                 flag = NGX_HTTP_SEE_OTHER;
 
-            } else if (ngx_strcmp(s.data, "status_307") == 0) {
+            } else if (ngx_strcmp(s.data, "http_307") == 0) {
                 flag = NGX_HTTP_TEMPORARY_REDIRECT;
 
-            } else if (ngx_strcmp(s.data, "status_308") == 0) {
+            } else if (ngx_strcmp(s.data, "http_308") == 0) {
                 flag = NGX_HTTP_PERMANENT_REDIRECT;
 
             } else {

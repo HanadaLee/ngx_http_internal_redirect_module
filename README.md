@@ -12,7 +12,7 @@
 - [Synopsis](#synopsis)
 - [Installation](#installation)
 - [Directives](#directives)
-	- [internal\_redirect](#internal_redirect)
+  - [internal\_redirect](#internal_redirect)
 - [Author](#author)
 - [License](#license)
 
@@ -31,9 +31,9 @@ server {
         internal_redirect -i ^/old(.+) /new$1 phase=preaccess;
     }
 
-	location /new {
-		return 200 'current uri is: $uri';
-	}
+    location /new {
+        return 200 'current uri is: $uri';
+    }
 }
 ```
 
@@ -61,19 +61,21 @@ The optional `phase=` parameter is used to indicate the phase in which this rule
 
 The optional `flag=` parameter is used for additional actions after evaluating the rule. The value of this parameter can be one of:
 * `break`
-stops processing the current set of rules at this phase, and immediately perform an internal redirect;
-* `status_301`
-returns a redirect with the 301 code.
-* `status_302`
-returns a redirect with the 302 code.
-* `status_303`
-returns a redirect with the 303 code.
-* `status_307`
-returns a redirect with the 307 code.
-* `status_308`
-returns a redirect with the 308 code.
+stops processing the current set of rules at this phase, and immediately executes an internal redirection;
+* `http_301`
+stops processing the current set of rules at this phase, and immediately returns a redirection with the 301 code.
+* `http_302`
+stops processing the current set of rules at this phase, and immediately returns a redirection with the 302 code.
+* `http_303`
+stops processing the current set of rules at this phase, and immediately returns a redirection with the 303 code.
+* `http_307`
+stops processing the current set of rules at this phase, and immediately returns a redirection with the 307 code.
+* `http_308`
+stops processing the current set of rules at this phase, and immediately returns a redirection with the 308 code.
 
 The `if` parameter enables conditional redirection. A request will not be redirected if the condition evaluates to “0” or an empty string. You can also use the form of `if!=` to make negative judgments.
+
+The rules of the previous level will be merged into the rules of the current level.
 
 # Author
 
