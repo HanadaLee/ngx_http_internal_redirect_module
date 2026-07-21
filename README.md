@@ -57,11 +57,9 @@ Conditional syntax is selected at compile time. With `ngx_condition_module`, pla
 
 **Syntax:** *internal_redirect [-i] pattern replacement [phase=phase] [flag=flag];*
 
-**Legacy syntax (without ngx_condition_module):** *internal_redirect [-i] pattern replacement [phase=phase] [flag=flag] [if=condition | if!=condition];*
-
 **Default:** *-*
 
-**Context:** *server, location; server when, location when (with ngx_condition_module)*
+**Context:** *server, location, server when, location when*
 
 Sets the new URI for internal redirection of the request. It is also possible to use a named location instead of the URI. The replacement value can contain variables. If the uri value is empty, then the redirect will not be made. After an internal redirect occurs, the request URI will be changed, and request will be returns to the NGX_HTTP_SERVER_REWRITE_PHASE (server_rewrite) phase. The request proceeds with a server default location. Later at NGX_HTTP_FIND_CONFIG_PHASE (find_config) a new location is chosen based on the new request URI.
 
