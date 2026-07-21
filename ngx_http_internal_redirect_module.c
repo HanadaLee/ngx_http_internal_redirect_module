@@ -8,6 +8,10 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#if (NGX_CONDITION)
+#include <ngx_http_condition_module.h>
+#endif
+
 
 #define NGX_HTTP_INTERNAL_REDIRECT_FLAG_DEFAULT    0
 #define NGX_HTTP_INTERNAL_REDIRECT_FLAG_BREAK      1
@@ -33,8 +37,12 @@ typedef struct {
     ngx_http_regex_t          *regex;
     ngx_http_complex_value_t  *replacement;
     ngx_uint_t                 flag;
+#if (NGX_CONDITION)
+    ngx_condition_expr_id_t    expr_id;
+#else
     ngx_http_complex_value_t  *filter;
     ngx_uint_t                 negative;
+#endif
 } ngx_http_internal_redirect_rule_t;
 
 
@@ -63,7 +71,11 @@ static ngx_int_t ngx_http_internal_redirect_handler_content(
 static ngx_command_t  ngx_http_internal_redirect_commands[] = {
 
     { ngx_string("internal_redirect"),
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF
+#if (NGX_CONDITION)
+                       |NGX_HTTP_SRV_WHEN_CONF|NGX_HTTP_LOC_WHEN_CONF
+#endif
+                       |NGX_CONF_1MORE,
       ngx_http_internal_redirect_rule,
       NGX_HTTP_LOC_CONF_OFFSET,
       0, NULL },
@@ -163,16 +175,21 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_regex_compile_t                 rc;
     u_char                              errstr[NGX_MAX_CONF_ERRSTR];
     ngx_str_t                           pattern, replacement;
+#if !(NGX_CONDITION)
     ngx_http_complex_value_t           *filter;
-    ngx_flag_t                          negative, ignore_case;
+    ngx_flag_t                          negative;
+#endif
+    ngx_flag_t                          ignore_case;
     ngx_uint_t                          flag;
     ngx_int_t                           phase;
     ngx_http_compile_complex_value_t    ccv;
     ngx_str_t                           s;
 
-    negative = 0;
     ignore_case = 0;
+#if !(NGX_CONDITION)
+    negative = 0;
     filter = NULL;
+#endif
     phase = NGX_HTTP_INTERNAL_REDIRECT_PHASE_PREACCESS;
     flag = NGX_HTTP_INTERNAL_REDIRECT_FLAG_DEFAULT;
 
@@ -264,6 +281,7 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+#if !(NGX_CONDITION)
         if (ngx_strncmp(value[cur].data, "if=", 3) == 0
             || ngx_strncmp(value[cur].data, "if!=", 4) == 0)
         {
@@ -293,6 +311,15 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
             filter = ccv.complex_value;
         }
+#else
+        if (ngx_strncmp(value[cur].data, "if=", 3) == 0
+            || ngx_strncmp(value[cur].data, "if!=", 4) == 0)
+        {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "invalid parameter \"%V\"", &value[cur]);
+            return NGX_CONF_ERROR;
+        }
+#endif
     }
 
     if (ilcf->rules[phase] == NGX_CONF_UNSET_PTR) {
@@ -309,8 +336,12 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     rule->flag = flag;
+#if (NGX_CONDITION)
+    rule->expr_id = ngx_condition_get_associated_expr_id(cf);
+#else
     rule->filter = filter;
     rule->negative = negative;
+#endif
 
     ngx_memzero(&rc, sizeof(ngx_regex_compile_t));
     rc.pool = cf->pool;
@@ -357,7 +388,9 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
 
     ngx_uint_t   i;
     ngx_str_t    uri, args;
+#if !(NGX_CONDITION)
     ngx_str_t    filter;
+#endif
     ngx_int_t    matched;
     ngx_int_t    rc;
     u_char      *p;
@@ -386,6 +419,13 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
     }
 
     for (i = 0; i < rules->nelts; i++) {
+#if (NGX_CONDITION)
+        if (ngx_http_condition_get_expr_result(r, rule[i].expr_id)
+            != NGX_CONDITION_EXPR_HIT)
+        {
+            continue;
+        }
+#else
         /* if= or if!= condition */
         if (rule[i].filter) {
             ngx_str_null(&filter);
@@ -407,6 +447,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
                 }
             }
         }
+#endif
 
         /* exec regex replacement */
         rc = ngx_http_regex_exec(r, rule[i].regex, &uri);
