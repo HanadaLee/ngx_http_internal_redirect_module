@@ -16,11 +16,11 @@
 #define NGX_HTTP_INTERNAL_REDIRECT_FLAG_DEFAULT    0
 #define NGX_HTTP_INTERNAL_REDIRECT_FLAG_BREAK      1
 #if 0
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_301 301  /* NGX_HTTP_MOVED_PERMANENTLY */
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_302 302  /* NGX_HTTP_MOVED_TEMPORARILY */
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_303 303  /* NGX_HTTP_SEE_OTHER */
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_307 307  /* NGX_HTTP_TEMPORARY_REDIRECT */
-#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_308 308  /* NGX_HTTP_PERMANENT_REDIRECT */
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_301        301
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_302        302
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_303        303
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_307        307
+#define NGX_HTTP_INTERNAL_REDIRECT_FLAG_308        308
 #endif
 
 
@@ -53,10 +53,10 @@ typedef struct {
 
 static ngx_int_t ngx_http_internal_redirect_init(ngx_conf_t *cf);
 
-static void * ngx_http_internal_redirect_create_conf(ngx_conf_t *cf);
-static char * ngx_http_internal_redirect_merge_conf(ngx_conf_t *cf,
+static void *ngx_http_internal_redirect_create_conf(ngx_conf_t *cf);
+static char *ngx_http_internal_redirect_merge_conf(ngx_conf_t *cf,
     void *parent, void *child);
-static char * ngx_http_internal_redirect_rule(ngx_conf_t *cf,
+static char *ngx_http_internal_redirect_rule(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
 
 static ngx_int_t ngx_http_internal_redirect_handler_preaccess(
@@ -214,7 +214,7 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     if (cur + 1 > last) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-            "invalid usage of \"internal_redirect\" directive");
+                           "invalid usage of \"internal_redirect\" directive");
         return NGX_CONF_ERROR;
     }
 
@@ -289,6 +289,7 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 s.len = value[cur].len - 3;
                 s.data = value[cur].data + 3;
                 negative = 0;
+
             } else {
                 s.len = value[cur].len - 4;
                 s.data = value[cur].data + 4;
@@ -300,7 +301,7 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             ccv.cf = cf;
             ccv.value = &s;
             ccv.complex_value = ngx_palloc(cf->pool,
-                                        sizeof(ngx_http_complex_value_t));
+                                           sizeof(ngx_http_complex_value_t));
             if (ccv.complex_value == NULL) {
                 return NGX_CONF_ERROR;
             }
@@ -366,7 +367,7 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ccv.cf = cf;
     ccv.value = &replacement;
     ccv.complex_value = ngx_palloc(cf->pool,
-                                sizeof(ngx_http_complex_value_t));
+                                   sizeof(ngx_http_complex_value_t));
     if (ccv.complex_value == NULL) {
         return NGX_CONF_ERROR;
     }
@@ -430,17 +431,17 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
         if (rule[i].filter) {
             ngx_str_null(&filter);
 
-            if (ngx_http_complex_value(r, rule[i].filter, &filter)
-                    != NGX_OK) {
+            if (ngx_http_complex_value(r, rule[i].filter, &filter) != NGX_OK) {
                 return NGX_ERROR;
             }
 
             if (filter.len == 0
-                 || (filter.len == 1 && filter.data[0] == '0'))
+                || (filter.len == 1 && filter.data[0] == '0'))
             {
                 if (!rule[i].negative) {
                     continue;
                 }
+
             } else {
                 if (rule[i].negative) {
                     continue;
@@ -457,7 +458,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
 
         if (rc == NGX_ERROR) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                        "internal_redirect: regex match failed");
+                          "internal_redirect: regex match failed");
             ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
             return NGX_OK;
         }
@@ -466,7 +467,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
 
         if (ngx_http_complex_value(r, rule[i].replacement, &uri) != NGX_OK) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                        "internal_redirect: regex match failed");
+                          "internal_redirect: regex match failed");
             ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
             return NGX_OK;
         }
@@ -513,9 +514,11 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
         {
             if (args.len > 0) {
                 r->args = args;
+
             } else {
                 ngx_str_null(&r->args);
             }
+
             r->valid_unparsed_uri = 0;
             return NGX_DECLINED;
         }
