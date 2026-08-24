@@ -383,7 +383,8 @@ ngx_http_internal_redirect_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
 static ngx_int_t
-ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
+ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules,
+    ngx_flag_t finalize)
 {
     ngx_http_internal_redirect_rule_t *rule;
 
@@ -459,8 +460,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
         if (rc == NGX_ERROR) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                           "internal_redirect: regex match failed");
-            ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-            return NGX_OK;
+            return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         ngx_str_null(&uri);
@@ -468,8 +468,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
         if (ngx_http_complex_value(r, rule[i].replacement, &uri) != NGX_OK) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                           "internal_redirect: regex match failed");
-            ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-            return NGX_OK;
+            return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         matched = 1;
@@ -489,8 +488,7 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
 
             r->headers_out.location->value = uri;
 
-            ngx_http_finalize_request(r, rule[i].flag);
-            return NGX_OK;
+            return rule[i].flag;
         }
 
         if (rule[i].flag == NGX_HTTP_INTERNAL_REDIRECT_FLAG_BREAK) {
@@ -528,11 +526,13 @@ ngx_http_internal_redirect_handler(ngx_http_request_t *r, ngx_array_t *rules)
     } else {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "invalid internal redirect URI: \"%V\"", &uri);
-        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-        return NGX_DONE;
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    ngx_http_finalize_request(r, NGX_DONE);
+    if (finalize) {
+        ngx_http_finalize_request(r, NGX_DONE);
+    }
+
     return NGX_DONE;
 }
 
@@ -546,7 +546,7 @@ ngx_http_internal_redirect_handler_preaccess(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
     return ngx_http_internal_redirect_handler(r,
-        ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_PREACCESS]);
+        ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_PREACCESS], 1);
 }
 
 
@@ -559,7 +559,7 @@ ngx_http_internal_redirect_handler_access(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
     return ngx_http_internal_redirect_handler(r,
-        ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_ACCESS]);
+        ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_ACCESS], 1);
 }
 
 
@@ -572,7 +572,7 @@ ngx_http_internal_redirect_handler_precontent(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
     return ngx_http_internal_redirect_handler(r,
-        ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_PRECONTENT]);
+        ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_PRECONTENT], 1);
 }
 
 
@@ -585,7 +585,7 @@ ngx_http_internal_redirect_handler_content(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
     return ngx_http_internal_redirect_handler(r,
-        ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_CONTENT]);
+        ilcf->rules[NGX_HTTP_INTERNAL_REDIRECT_PHASE_CONTENT], 0);
 }
 
 
